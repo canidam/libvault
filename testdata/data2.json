@@ -1,0 +1,20 @@
+{
+  "request_id": "11f40ef0-9c47-ca1f-aed6-2da198c93efb",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "data": {
+      "secondsupersecret": "updatedsecret"
+    },
+    "metadata": {
+      "created_time": "2021-05-21T17:03:24.803783Z",
+      "deletion_time": "",
+      "destroyed": false,
+      "version": 1
+    }
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}

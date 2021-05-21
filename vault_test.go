@@ -19,11 +19,12 @@ const (
 	ApproleLoginResponse = "approleLoginResponse.json"
 	LookupResponse       = "lookupResponse.json"
 	Data1Response        = "data1.json"
+	Data2Response        = "data2.json"
 )
 
 var (
-	tokenClient   Client
-	approleClient Client
+	tokenClient   client
+	approleClient client
 	certPool      *x509.CertPool
 )
 
@@ -130,7 +131,17 @@ func TestNewClientWithAppRole(t *testing.T) {
 	}
 }
 
-func TestGetSecret(t *testing.T) {
+func testRequestIsValid(t *testing.T, r *http.Request) {
+	t.Helper()
+	if r.Method != http.MethodGet {
+		t.Error("expecting Get method")
+	}
+	if _, ok := r.Header["X-Vault-Token"]; !ok {
+		t.Error("missing vault token in request")
+	}
+}
+
+func TestReads(t *testing.T) {
 	ts, mux := setup(true)
 	defer ts.Close()
 
@@ -140,15 +151,15 @@ func TestGetSecret(t *testing.T) {
 	})
 	// fetch secrets here
 	mux.HandleFunc("/v1/secret/data/data1", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			_ = respondWithError(w, http.StatusMethodNotAllowed, "expecting Get method")
-			return
-		}
-		if _, ok := r.Header["X-Vault-Token"]; !ok {
-			_ = respondWithError(w, http.StatusBadRequest, "missing vault token in request")
-			return
-		}
+		testRequestIsValid(t, r)
 		err := respondWithJson(w, http.StatusOK, readFixture(Data1Response))
+		if err != nil {
+			t.Error(err)
+		}
+	})
+	mux.HandleFunc("/v1/secret/data/data2", func(w http.ResponseWriter, r *http.Request) {
+		testRequestIsValid(t, r)
+		err := respondWithJson(w, http.StatusOK, readFixture(Data2Response))
 		if err != nil {
 			t.Error(err)
 		}
@@ -165,10 +176,11 @@ func TestGetSecret(t *testing.T) {
 		expected map[string]string
 	}{
 		{"/data1", map[string]string{"mysecret": "supersecret"}},
+		{"/data2", map[string]string{"secondsupersecret": "updatedsecret"}},
 	}
 
-	for _, _case := range cases {
-		t.Run(_case.path, func(t *testing.T) {
+	t.Run("Read", func(t *testing.T) {
+		for _, _case := range cases {
 			resp, err := approleClient.Read(_case.path)
 			if err != nil {
 				t.Error(err)
@@ -177,8 +189,29 @@ func TestGetSecret(t *testing.T) {
 					t.Errorf("%s != %s", resp, _case.expected)
 				}
 			}
-		})
-	}
+		}
+	})
+
+	t.Run("ReadMany", func(t *testing.T) {
+		var paths []string
+		var retMap = make(map[string]string)
+
+		for _, c := range cases {
+			paths = append(paths, c.path)
+			for k, v := range c.expected {
+				retMap[k] = v
+			}
+		}
+
+		resp, err := approleClient.(*VaultClient).ReadMany(paths)
+		if err != nil {
+			t.Error(err)
+		} else {
+			if fmt.Sprint(resp) != fmt.Sprint(retMap) {
+				t.Errorf("%s != %s", resp, retMap)
+			}
+		}
+	})
 }
 
 func init() {

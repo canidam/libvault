@@ -9,19 +9,20 @@ import (
 	"strings"
 )
 
-type Client interface {
+// client defines the minimal functions set for a Vault client
+type client interface {
 	Read(secretPath string) (map[string]string, error)
 	LookupToken() error
 
 	token() string
 }
 
-type Option func(vc *VaultClient) error
-
-// Auth performs a login and returns a clientToken and an error
-type Auth interface {
+// auth performs a login and returns a clientToken and an error
+type auth interface {
 	Login(vc *VaultClient) (string, error)
 }
+
+type Option func(vc *VaultClient) error
 
 type Approle struct {
 	roleId   string
@@ -34,9 +35,8 @@ func (a Approle) Login(vc *VaultClient) (string, error) {
 					"secret_id": "` + a.secretId + `"
 				}`)
 
-
 	r, _ := vc.newRequest("POST", ApproleLoginPath, jsonData)
-	resp, err := vc.Do(r)
+	resp, err := vc.do(r)
 	if err != nil {
 		return "", err
 	}
@@ -109,8 +109,4 @@ type vaultLoginResp struct {
 
 func (vl *vaultLoginResp) token() string {
 	return vl.LoginAuth.ClientToken
-}
-
-func (vl *vaultLoginResp) accessor() string {
-	return vl.LoginAuth.Accessor
 }

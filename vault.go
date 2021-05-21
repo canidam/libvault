@@ -16,7 +16,7 @@ const (
 
 type VaultClient struct {
 	httpClient http.Client
-	auth       Auth
+	auth       auth
 
 	addr        string
 	clientToken string
@@ -37,7 +37,7 @@ func (c *VaultClient) String() string {
 	return fmt.Sprintf("addr: %s, accessor: %s", c.addr, c.accessor)
 }
 
-func (c *VaultClient) Do(req *http.Request) (*http.Response, error) {
+func (c *VaultClient) do(req *http.Request) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
@@ -101,13 +101,16 @@ func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 	return &vc, nil
 }
 
+// NewClient creates a new Vault client. The default client is a valid one. You can configure it
+// using functional options. Check the vault_test.go file for examples.
 func NewClient(opts ...func(v *VaultClient) error) (*VaultClient, error) {
 	return newClient(opts...)
 }
 
+// Read reads a single secret path from the Vault
 func (c *VaultClient) Read(secretPath string) (map[string]string, error) {
 	req, _ := c.getRequest(secretPath)
-	resp, err := c.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request for %s: %s", req.URL, err)
 	} else if resp.StatusCode != 200 {
@@ -125,4 +128,21 @@ func (c *VaultClient) Read(secretPath string) (map[string]string, error) {
 	var vaultResponse vaultSecretResp
 	_ = parseJson(resp.Body, &vaultResponse)
 	return vaultResponse.Secrets(), err
+}
+
+// ReadMany reads all the secretsPaths defined, returning a single map containing all the secrets.
+// If a secret key exists in more than a single path, the secret return is from the last path specified.
+func (c *VaultClient) ReadMany(secretsPaths []string) (map[string]string, error) {
+	var secretsMap = make(map[string]string)
+
+	for _, secret := range secretsPaths {
+		retMap, err := c.Read(secret)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range retMap {
+			secretsMap[k] = v
+		}
+	}
+	return secretsMap, nil
 }

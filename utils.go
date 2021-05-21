@@ -18,12 +18,6 @@ func parseJson(resp io.ReadCloser, responseStruct interface{}) error {
 	return json.Unmarshal(bytesData, responseStruct)
 }
 
-/* pprintJson returns a pretty-json formatted string. Useful mainly for debugging */
-func pprintJson(r interface{}) string {
-	b, _ := json.MarshalIndent(r, "", "\t")
-	return string(b)
-}
-
 /* getEnv returns value from the environment, or fallback if it isn't set */
 func getEnv(key, fallback string) string {
 	if v, ok := os.LookupEnv(key); ok {

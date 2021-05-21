@@ -87,6 +87,8 @@ func main() {
 	}
 }
 ```
+## Documentation
+Can be found [here](docs/DOCS.md)
 
 ## Tests
 Checkout the project and run
