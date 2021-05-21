@@ -1,0 +1,29 @@
+{
+  "request_id": "303a66e5-f1fc-c399-931b-46e6c015e462",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": null,
+  "wrap_info": null,
+  "warnings": null,
+  "auth": {
+    "client_token": "s.rOvSa1JwfonWpxaR5F3hndgT",
+    "accessor": "OxrcZrRaf0BJAn7akrU3qvkr",
+    "policies": [
+      "admin",
+      "default"
+    ],
+    "token_policies": [
+      "admin",
+      "default"
+    ],
+    "metadata": {
+      "role_name": "libvault"
+    },
+    "lease_duration": 300,
+    "renewable": true,
+    "entity_id": "fda2ae19-2792-47e3-9a95-842c76a6af76",
+    "token_type": "service",
+    "orphan": true
+  }
+}

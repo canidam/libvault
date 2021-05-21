@@ -1,0 +1,30 @@
+{
+  "request_id": "0017aab9-4e78-1ba0-e7b6-f5cccc7624a4",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": {
+    "accessor": "H4di2hxHlYsXLeXKirUzCtrO",
+    "creation_time": 1621007260,
+    "creation_ttl": 0,
+    "display_name": "token",
+    "entity_id": "",
+    "expire_time": null,
+    "explicit_max_ttl": 0,
+    "id": "root-token",
+    "issue_time": "2021-05-14T18:47:40.296718+03:00",
+    "meta": null,
+    "num_uses": 0,
+    "orphan": true,
+    "path": "auth/token/create",
+    "policies": [
+      "root"
+    ],
+    "renewable": false,
+    "ttl": 0,
+    "type": "service"
+  },
+  "wrap_info": null,
+  "warnings": null,
+  "auth": null
+}
