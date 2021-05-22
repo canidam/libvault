@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,9 @@ const (
 	caCertPath     = "testdata/certs/ca.crt"
 	serverCertPath = "testdata/certs/server.crt"
 	serverKeyPath  = "testdata/certs/server.key"
+
+	VaultRoleId   = "319418d1-7a8b-2da6-46c3-e0301f3ce02a"
+	VaultSecretId = "ce5e446d-3a60-54b6-5996-78b8f04ec03b"
 
 	ApproleLoginResponse = "approleLoginResponse.json"
 	LookupResponse       = "lookupResponse.json"
@@ -41,11 +45,6 @@ func respondWithJson(w http.ResponseWriter, code int, jsonPayload []byte) error 
 	w.WriteHeader(code)
 	_, err := w.Write(jsonPayload)
 	return err
-}
-
-func respondWithError(w http.ResponseWriter, code int, err string) error {
-	b := []byte(fmt.Sprintf(`{"error": "%s"}`, err))
-	return respondWithJson(w, code, b)
 }
 
 func setup(enableTLS bool) (*httptest.Server, *http.ServeMux) {
@@ -78,36 +77,73 @@ func setup(enableTLS bool) (*httptest.Server, *http.ServeMux) {
 }
 
 func TestNewClientDefaults(t *testing.T) {
-	ts, mux := setup(true)
+	ts, mux := setup(false)
 	defer ts.Close()
 
 	mux.HandleFunc(TokenLookupPath, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			_ = respondWithError(w, http.StatusMethodNotAllowed, "expecting Post method")
-			return
-		}
-		if _, ok := r.Header["X-Vault-Token"]; !ok {
-			_ = respondWithError(w, http.StatusBadRequest, "missing vault token in request")
-			return
-		}
+		testRequestIsValid(t, "POST", r)
 		if err := respondWithJson(w, http.StatusOK, readFixture(LookupResponse)); err != nil {
 			t.Error(err)
 		}
 	})
 
 	var err error
-	if tokenClient, err = NewClient(SetVaultAddr(ts.URL), SetRootCA(certPool)); err != nil {
+	if tokenClient, err = NewClient(SetVaultAddr(ts.URL)); err != nil {
 		t.Error(err)
 		return
 	}
 
-	if tokenClient == nil || tokenClient.token() == "" {
-		t.Error("failed to create NewClient with defaults: token is nil")
+	if tokenClient == nil {
+		t.Error("failed to create NewClient with defaults")
 		return
 	}
 
 	if err = tokenClient.LookupToken(); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestInvalidParamsNewClient(t *testing.T) {
+	// Invalid Vault Address
+	invalidAddrClient, err := NewClient(SetVaultAddr(""))
+	if invalidAddrClient != nil || err == nil {
+		t.Error("expecting nil client and non-nil error")
+		return
+	}
+
+	if !strings.Contains(err.Error(), ErrAddrMissing) {
+		t.Errorf("expecting %s as part of error: %s", ErrAddrMissing, err.Error())
+	}
+
+	// Missing token
+	invalidTokenClient, err := NewClient(SetToken(""))
+	if invalidTokenClient != nil || err == nil {
+		t.Errorf("expecting nil client (%s) and non-nil error (%s)", invalidTokenClient, err)
+		return
+	}
+	if !strings.Contains(err.Error(), ErrTokenMissing) {
+		t.Errorf("expecting %s as part of error: %s", ErrTokenMissing, err.Error())
+	}
+}
+
+func TestNewClientSetToken(t *testing.T) {
+	ts, mux := setup(false)
+	defer ts.Close()
+
+	mux.HandleFunc(TokenLookupPath, func(w http.ResponseWriter, r *http.Request) {
+		testRequestIsValid(t, "POST", r)
+		if err := respondWithJson(w, http.StatusOK, readFixture(LookupResponse)); err != nil {
+			t.Error(err)
+		}
+	})
+
+	testToken := "fake-token"
+	setTokenClient, err := NewClient(SetVaultAddr(ts.URL), SetToken(testToken))
+	if err != nil {
+		t.Error(err)
+	}
+	if setTokenClient.token() != testToken {
+		t.Errorf("token mismatch. expected=%s, actual=%s", testToken, setTokenClient.token())
 	}
 }
 
@@ -131,10 +167,32 @@ func TestNewClientWithAppRole(t *testing.T) {
 	}
 }
 
-func testRequestIsValid(t *testing.T, r *http.Request) {
+func TestNewClientProvideAppRole(t *testing.T) {
+	ts, mux := setup(true)
+	defer ts.Close()
+
+	mux.HandleFunc(ApproleLoginPath, func(w http.ResponseWriter, r *http.Request) {
+		_ = respondWithJson(w, http.StatusOK, readFixture(ApproleLoginResponse))
+	})
+
+	approleClient, err := NewClient(SetVaultAddr(ts.URL), SetRootCA(certPool), ProvideApprole(Approle{
+		roleId:   VaultRoleId,
+		secretId: VaultSecretId,
+	}))
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if approleClient != nil && approleClient.token() == "" {
+		t.Error("clientToken is empty")
+		return
+	}
+}
+
+func testRequestIsValid(t *testing.T, expectedMethod string, r *http.Request) {
 	t.Helper()
-	if r.Method != http.MethodGet {
-		t.Error("expecting Get method")
+	if r.Method != expectedMethod {
+		t.Errorf("expecting %s method", expectedMethod)
 	}
 	if _, ok := r.Header["X-Vault-Token"]; !ok {
 		t.Error("missing vault token in request")
@@ -151,14 +209,14 @@ func TestReads(t *testing.T) {
 	})
 	// fetch secrets here
 	mux.HandleFunc("/v1/secret/data/data1", func(w http.ResponseWriter, r *http.Request) {
-		testRequestIsValid(t, r)
+		testRequestIsValid(t, "GET", r)
 		err := respondWithJson(w, http.StatusOK, readFixture(Data1Response))
 		if err != nil {
 			t.Error(err)
 		}
 	})
 	mux.HandleFunc("/v1/secret/data/data2", func(w http.ResponseWriter, r *http.Request) {
-		testRequestIsValid(t, r)
+		testRequestIsValid(t, "GET", r)
 		err := respondWithJson(w, http.StatusOK, readFixture(Data2Response))
 		if err != nil {
 			t.Error(err)
@@ -218,6 +276,6 @@ func init() {
 	// Tokens and Approle info is read from env variables.
 	// This sets them up for the tests.
 	_ = os.Setenv("VAULT_TOKEN", "root-token")
-	_ = os.Setenv("VAULT_ROLE_ID", "319418d1-7a8b-2da6-46c3-e0301f3ce02a")
-	_ = os.Setenv("VAULT_SECRET_ID", "ce5e446d-3a60-54b6-5996-78b8f04ec03b")
+	_ = os.Setenv("VAULT_ROLE_ID", VaultRoleId)
+	_ = os.Setenv("VAULT_SECRET_ID", VaultSecretId)
 }

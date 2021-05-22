@@ -7,31 +7,46 @@ package libvault // import "github.com/canidam/libvault"
 CONSTANTS
 
 const (
-        ApproleLoginPath = "/v1/auth/approle/login"
-        TokenLookupPath  = "/v1/auth/token/lookup"
-        DEFAULT_TIMEOUT  = 10
+	ApproleLoginPath = "/v1/auth/approle/login"
+	TokenLookupPath  = "/v1/auth/token/lookup"
+	DEFAULT_TIMEOUT  = 10
+
+	// Errors
+	ErrAddrMissing  = "vault address is missing"
+	ErrTokenMissing = "vault token is missing"
 )
 
 TYPES
 
 type Approle struct {
-        // Has unexported fields.
+	// Has unexported fields.
 }
 
 func (a Approle) Login(vc *VaultClient) (string, error)
 
 type Option func(vc *VaultClient) error
 
-func SetRootCA(cp *x509.CertPool) Option
+func ProvideApprole(a Approle) Option
+    ProvideApprole allows to inject Approle struct to the client. Use this if
+    you want to provide the roleId and secretId from outside, and not getting
+    them from the environment vars.
 
-func SetTransport(t *http.Transport) Option
+func SetRootCA(cp *x509.CertPool) Option
+    SetRootCA config the client with specific RootCAs to trust. Use this when
+    you work with a vault server that uses self-signed certificates.
+
+func SetToken(token string) Option
+    SetToken configure the vault token to use when communicating with the server
 
 func SetVaultAddr(addr string) Option
 
 func UseApprole() Option
+    UseApprole configures the client with the Approle auth method. Enabling this
+    option will read the VAULT_ROLE_ID and VAULT_SECRET_ID from environment
+    vars, and use them for Login()
 
 type VaultClient struct {
-        // Has unexported fields.
+	// Has unexported fields.
 }
 
 func NewClient(opts ...func(v *VaultClient) error) (*VaultClient, error)

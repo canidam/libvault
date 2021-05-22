@@ -57,28 +57,55 @@ func SetVaultAddr(addr string) Option {
 	}
 }
 
+// SetToken configure the vault token to use when communicating with the server
+func SetToken(token string) Option {
+	return func(vc *VaultClient) error {
+		if token == "" {
+			return fmt.Errorf(ErrTokenMissing)
+		}
+		vc.clientToken = token
+		return nil
+	}
+}
+
+// UseApprole configures the client with the Approle auth method. Enabling this option
+// will read the VAULT_ROLE_ID and VAULT_SECRET_ID from environment vars, and use them
+// for Login()
 func UseApprole() Option {
-	return func(v *VaultClient) error {
+	return func(vc *VaultClient) error {
 		a := Approle{
 			os.Getenv("VAULT_ROLE_ID"),
 			os.Getenv("VAULT_SECRET_ID"),
 		}
-		v.auth = a
+		if a.roleId == "" {
+			return fmt.Errorf("VAULT_ROLE_ID environment variable is not set, and expected to be")
+		} else if a.secretId == "" {
+			return fmt.Errorf("VAULT_SECRET_ID environment variable is not set, and expected to be")
+		}
+		vc.auth = a
 		return nil
 	}
 }
 
-func SetTransport(t *http.Transport) Option {
-	return func(v *VaultClient) error {
-		v.httpClient.Transport = t
+// ProvideApprole allows to inject Approle struct to the client. Use this if you want
+// to provide the roleId and secretId from outside, and not getting them from the environment vars.
+func ProvideApprole(a Approle) Option {
+	return func(vc *VaultClient) error {
+		if a.roleId == "" || a.secretId == "" {
+			return fmt.Errorf("roleId (%s) and secretId (%s) are both required and can not be empty",
+				a.roleId, a.secretId)
+		}
+		vc.auth = a
 		return nil
 	}
 }
 
+// SetRootCA config the client with specific RootCAs to trust.
+// Use this when you work with a vault server that uses self-signed certificates.
 func SetRootCA(cp *x509.CertPool) Option {
-	return func(v *VaultClient) error {
+	return func(vc *VaultClient) error {
 		tlsCfg := &tls.Config{RootCAs: cp}
-		v.httpClient.Transport = &http.Transport{TLSClientConfig: tlsCfg}
+		vc.httpClient.Transport = &http.Transport{TLSClientConfig: tlsCfg}
 		return nil
 	}
 }

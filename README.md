@@ -25,7 +25,7 @@ feel free to open FRs, PRs or issues.
 
 ## Installation
 ```bash
-go get -v github.com/canidam/libvault
+go get -d -v github.com/canidam/libvault
 ```
 
 ## Usage

@@ -12,6 +12,10 @@ const (
 	ApproleLoginPath = "/v1/auth/approle/login"
 	TokenLookupPath  = "/v1/auth/token/lookup"
 	DEFAULT_TIMEOUT  = 10
+
+	// Errors
+	ErrAddrMissing  = "vault address is missing"
+	ErrTokenMissing = "vault token is missing"
 )
 
 type VaultClient struct {
@@ -48,6 +52,7 @@ func (c *VaultClient) LookupToken() error {
 
 	req, _ := c.newRequest("POST", TokenLookupPath, jsonData)
 	resp, _ := c.httpClient.Do(req)
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("failed to validate clientToken: code=%d %s", resp.StatusCode, vaultErrorMsg(resp.Body))
@@ -95,7 +100,11 @@ func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 	}
 
 	if vc.addr == "" {
-		return nil, fmt.Errorf("vault address can't be an empty string")
+		return nil, fmt.Errorf(ErrAddrMissing)
+	}
+
+	if vc.clientToken == "" {
+		return nil, fmt.Errorf(ErrTokenMissing)
 	}
 
 	return &vc, nil
@@ -113,15 +122,19 @@ func (c *VaultClient) Read(secretPath string) (map[string]string, error) {
 	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request for %s: %s", req.URL, err)
-	} else if resp.StatusCode != 200 {
+	}
+
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
 
 		switch resp.StatusCode {
 		case 403:
-			return nil, fmt.Errorf("%d: Authorization error. Check your clientToken", resp.StatusCode)
+			return nil, fmt.Errorf("%d: Authorization error. Check your clientToken. %s",
+				resp.StatusCode, vaultErrorMsg(resp.Body))
 		case 404:
 			return nil, fmt.Errorf("%d: Secret not found: %s", resp.StatusCode, req.URL)
 		default:
-			return nil, fmt.Errorf("%d: Unknown error", resp.StatusCode)
+			return nil, fmt.Errorf("%d: Unknown error. %s", resp.StatusCode, vaultErrorMsg(resp.Body))
 		}
 	}
 

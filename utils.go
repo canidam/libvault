@@ -8,12 +8,11 @@ import (
 )
 
 /* parseJson extract json content from http.Response to a struct */
-func parseJson(resp io.ReadCloser, responseStruct interface{}) error {
+func parseJson(resp io.Reader, responseStruct interface{}) error {
 	bytesData, err := ioutil.ReadAll(resp)
 	if err != nil {
 		return err
 	}
-	defer resp.Close()
 
 	return json.Unmarshal(bytesData, responseStruct)
 }
