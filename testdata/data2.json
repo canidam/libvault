@@ -5,7 +5,8 @@
   "lease_duration": 0,
   "data": {
     "data": {
-      "secondsupersecret": "updatedsecret"
+      "secondsupersecret": "updatedsecret",
+      "anothersecret": "hollymolly"
     },
     "metadata": {
       "created_time": "2021-05-21T17:03:24.803783Z",

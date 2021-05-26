@@ -224,7 +224,7 @@ func TestReads(t *testing.T) {
 	})
 
 	approleClient, _ = NewClient(SetVaultAddr(ts.URL), SetRootCA(certPool), UseApprole())
-	if approleClient.token() == "" {
+	if approleClient == nil || approleClient.token() == "" {
 		t.Error("approleClient is not initialized")
 		return
 	}
@@ -234,7 +234,7 @@ func TestReads(t *testing.T) {
 		expected map[string]string
 	}{
 		{"/data1", map[string]string{"mysecret": "supersecret"}},
-		{"/data2", map[string]string{"secondsupersecret": "updatedsecret"}},
+		{"/data2", map[string]string{"secondsupersecret": "updatedsecret", "anothersecret": "hollymolly"}},
 	}
 
 	t.Run("Read", func(t *testing.T) {

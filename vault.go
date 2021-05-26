@@ -1,22 +1,39 @@
 package libvault
 
 import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
 const (
-	ApproleLoginPath = "/v1/auth/approle/login"
-	TokenLookupPath  = "/v1/auth/token/lookup"
-	DEFAULT_TIMEOUT  = 10
+	TokenLookupPath = "/v1/auth/token/lookup"
+	DEFAULT_TIMEOUT = 10
 
 	// Errors
 	ErrAddrMissing  = "vault address is missing"
 	ErrTokenMissing = "vault token is missing"
+	ErrSecretParse  = "failed to parse secret"
 )
+
+// client defines the minimal functions set for a Vault client
+type client interface {
+	Read(secretPath string) (map[string]string, error)
+	LookupToken() error
+
+	token() string
+}
+
+type Option func(vc *VaultClient) error
 
 type VaultClient struct {
 	httpClient http.Client
@@ -31,6 +48,10 @@ func (c *VaultClient) token() string {
 	return c.clientToken
 }
 
+func (c *VaultClient) do(req *http.Request) (*http.Response, error) {
+	return c.httpClient.Do(req)
+}
+
 func (c *VaultClient) getRequest(secretPath string) (*http.Request, error) {
 	var pathPrefix = "/v1/secret/data"
 	path := fmt.Sprintf("%s%s", pathPrefix, secretPath)
@@ -39,26 +60,6 @@ func (c *VaultClient) getRequest(secretPath string) (*http.Request, error) {
 
 func (c *VaultClient) String() string {
 	return fmt.Sprintf("addr: %s, accessor: %s", c.addr, c.accessor)
-}
-
-func (c *VaultClient) do(req *http.Request) (*http.Response, error) {
-	return c.httpClient.Do(req)
-}
-
-func (c *VaultClient) LookupToken() error {
-	jsonData := strings.NewReader(`{
-					"clientToken": "` + c.token() + `"
-				}`)
-
-	req, _ := c.newRequest("POST", TokenLookupPath, jsonData)
-	resp, _ := c.httpClient.Do(req)
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("failed to validate clientToken: code=%d %s", resp.StatusCode, vaultErrorMsg(resp.Body))
-	}
-
-	return nil
 }
 
 func (c *VaultClient) newRequest(method, path string, body io.Reader) (*http.Request, error) {
@@ -100,11 +101,11 @@ func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 	}
 
 	if vc.addr == "" {
-		return nil, fmt.Errorf(ErrAddrMissing)
+		return nil, errors.New(ErrAddrMissing)
 	}
 
 	if vc.clientToken == "" {
-		return nil, fmt.Errorf(ErrTokenMissing)
+		return nil, errors.New(ErrTokenMissing)
 	}
 
 	return &vc, nil
@@ -114,6 +115,107 @@ func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 // using functional options. Check the vault_test.go file for examples.
 func NewClient(opts ...func(v *VaultClient) error) (*VaultClient, error) {
 	return newClient(opts...)
+}
+
+// SetVaultAddr configures the vault server address of the client
+func SetVaultAddr(addr string) Option {
+	return func(v *VaultClient) error {
+		v.addr = addr
+		return nil
+	}
+}
+
+// SetToken configures the vault token to use when communicating with the server
+func SetToken(token string) Option {
+	return func(vc *VaultClient) error {
+		if token == "" {
+			return errors.New(ErrTokenMissing)
+		}
+		vc.clientToken = token
+		return nil
+	}
+}
+
+// SetRootCA configures the client with specific RootCAs to trust.
+// Use this when you work with a vault server that uses self-signed certificates.
+func SetRootCA(cp *x509.CertPool) Option {
+	return func(vc *VaultClient) error {
+		tlsCfg := &tls.Config{RootCAs: cp}
+		vc.httpClient.Transport = &http.Transport{TLSClientConfig: tlsCfg}
+		return nil
+	}
+}
+
+//
+// Helpers
+//
+
+// parseSecret reads response from Vault, figuring out the (supported) secret engine backend
+// and returns a Secret to the caller
+func parseSecret(resp io.Reader) (Secret, error) {
+	bodyBytes, _ := ioutil.ReadAll(resp)
+
+	// KV Backend
+	var kv kvSecretResp
+	if err := parseJson(bytes.NewBuffer(bodyBytes), &kv); err != nil {
+		return nil, err
+	}
+	if kv.RequestID != "" && len(kv.Secrets()) > 0 && kv.Version() != 0 {
+		return kv, nil
+	}
+
+	// TODO: Handle other secret engine backends, e.g AWS
+	return nil, errors.New(ErrSecretParse)
+}
+
+// parseJson extract json content from http.Response to a struct
+func parseJson(resp io.Reader, responseStruct interface{}) error {
+	bytesData, err := ioutil.ReadAll(resp)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(bytesData, responseStruct)
+}
+
+// getEnv returns value from the environment, or fallback if it isn't set
+func getEnv(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	} else {
+		return fallback
+	}
+}
+
+// vaultErrorMsg extracts the body content of a vault error
+func vaultErrorMsg(resp io.ReadCloser) interface{} {
+	var respData map[string]interface{}
+	_ = parseJson(resp, &respData)
+	if val, ok := respData["errors"]; ok {
+		return val
+	}
+	return respData
+}
+
+//
+// Public API
+//
+
+// LookupToken performs lookup on a token (mostly to validate it)
+func (c *VaultClient) LookupToken() error {
+	jsonData := strings.NewReader(`{
+					"clientToken": "` + c.token() + `"
+				}`)
+
+	req, _ := c.newRequest("POST", TokenLookupPath, jsonData)
+	resp, _ := c.httpClient.Do(req)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("failed to validate clientToken: code=%d %s", resp.StatusCode, vaultErrorMsg(resp.Body))
+	}
+
+	return nil
 }
 
 // Read reads a single secret path from the Vault
@@ -138,9 +240,12 @@ func (c *VaultClient) Read(secretPath string) (map[string]string, error) {
 		}
 	}
 
-	var vaultResponse vaultSecretResp
-	_ = parseJson(resp.Body, &vaultResponse)
-	return vaultResponse.Secrets(), err
+	var s Secret
+	s, err = parseSecret(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return s.Secrets(), err
 }
 
 // ReadMany reads all the secretsPaths defined, returning a single map containing all the secrets.
