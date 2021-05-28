@@ -13,14 +13,15 @@ feel free to open FRs, PRs or issues.
 - Supported [Auth Methods](https://www.vaultproject.io/docs/auth):
     - Tokens
     - AppRole
+    - AwsRole (EC2 method)
     
 
 - Supported [Secrets Engines](https://www.vaultproject.io/docs/secrets):
     - [KV v2.0](https://www.vaultproject.io/docs/secrets/kv/kv-v2)
     
 
-- Support self-signed CA certificates
-- The secrets are consumed using environment variables. You **should** set them before initializing the client.
+- Supports self-signed CA certificates
+- By default, the Vault API secrets are consumed using environment variables. You can provide them to the client if you prefer. Check the tests file for examples.
 
 
 ## Installation

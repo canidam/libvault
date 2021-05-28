@@ -17,12 +17,15 @@ import (
 
 const (
 	TokenLookupPath = "/v1/auth/token/lookup"
-	DEFAULT_TIMEOUT = 10
+	DefaultTimeout  = 10
 
-	// Errors
 	ErrAddrMissing  = "vault address is missing"
 	ErrTokenMissing = "vault token is missing"
+	ErrEmptyToken   = "vault parsed token is empty"
 	ErrSecretParse  = "failed to parse secret"
+	Err403Auth      = "Authorization error. Check your clientToken."
+	Err404NotFound  = "Secret not found"
+	ErrUnknown      = "Unknown error"
 )
 
 // client defines the minimal functions set for a Vault client
@@ -74,11 +77,35 @@ func (c *VaultClient) newRequest(method, path string, body io.Reader) (*http.Req
 	return req, err
 }
 
+// login authenticates with the provided backend, and configures the token of the client
+func (c *VaultClient) login(authMethod auth) error {
+	jsonData := authMethod.LoginPayload()
+	r, _ := c.newRequest("POST", authMethod.LoginEndpoint(), jsonData)
+	resp, err := c.do(r)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("login failed: %d", resp.StatusCode)
+	}
+
+	var lr loginResp
+	_ = parseJson(resp.Body, &lr)
+
+	token := lr.token()
+	if token == "" {
+		return errors.New(ErrEmptyToken)
+	}
+	c.clientToken = token
+	return nil
+}
+
 func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 	// Initialize default client
 	vc := VaultClient{
 		httpClient: http.Client{
-			Timeout: time.Second * time.Duration(DEFAULT_TIMEOUT),
+			Timeout: time.Second * time.Duration(DefaultTimeout),
 		},
 		addr:        getEnv("VAULT_ADDR", "http://localhost:8200"),
 		clientToken: getEnv("VAULT_TOKEN", ""),
@@ -93,11 +120,10 @@ func newClient(options ...func(v *VaultClient) error) (*VaultClient, error) {
 
 	// Login to Vault
 	if vc.auth != nil {
-		token, err := vc.auth.Login(&vc)
+		err := vc.login(vc.auth)
 		if err != nil {
 			return nil, fmt.Errorf("failed to login with the authentication method provided %T: %s", vc.auth, err)
 		}
-		vc.clientToken = token
 	}
 
 	if vc.addr == "" {
@@ -231,12 +257,11 @@ func (c *VaultClient) Read(secretPath string) (map[string]string, error) {
 
 		switch resp.StatusCode {
 		case 403:
-			return nil, fmt.Errorf("%d: Authorization error. Check your clientToken. %s",
-				resp.StatusCode, vaultErrorMsg(resp.Body))
+			return nil, fmt.Errorf("%d: %s %s", resp.StatusCode, Err403Auth, vaultErrorMsg(resp.Body))
 		case 404:
-			return nil, fmt.Errorf("%d: Secret not found: %s", resp.StatusCode, req.URL)
+			return nil, fmt.Errorf("%d: %s: %s", resp.StatusCode, Err404NotFound, req.URL)
 		default:
-			return nil, fmt.Errorf("%d: Unknown error. %s", resp.StatusCode, vaultErrorMsg(resp.Body))
+			return nil, fmt.Errorf("%d: %s. %s", resp.StatusCode, ErrUnknown, vaultErrorMsg(resp.Body))
 		}
 	}
 
