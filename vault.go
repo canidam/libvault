@@ -234,7 +234,10 @@ func (c *VaultClient) LookupToken() error {
 				}`)
 
 	req, _ := c.newRequest("POST", TokenLookupPath, jsonData)
-	resp, _ := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to validate clientToken: err=%s", err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {

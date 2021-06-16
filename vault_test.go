@@ -89,7 +89,7 @@ func TestClientStringRep(t *testing.T) {
 	}
 
 	Client.accessor = "dummy"
-	if Client.String() != fmt.Sprintf("addr: http://localhost:8200, accessor: dummy") {
+	if Client.String() != "addr: http://localhost:8200, accessor: dummy" {
 		t.Error("string representation is wrong")
 	}
 }
